@@ -1,0 +1,149 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mudra Extraction Dashboard</title>
+<style>
+  body { background:#0f1117; color:#e6e6e6; font-family:'Segoe UI', system-ui, sans-serif; margin:0; padding:40px; }
+  h1 { font-size:1.4rem; margin-bottom:4px; }
+  .sub { color:#9aa0ab; margin-bottom:28px; font-size:0.9rem; }
+  .sub code { background:#1c1f28; padding:2px 6px; border-radius:4px; }
+  .card { background:#171a23; border:1px solid #262a36; border-radius:12px; padding:24px; max-width:720px; }
+  .preview-wrap { position:relative; width:100%; aspect-ratio:16/9; background:#0a0b0f; border:1px solid #262a36; border-radius:10px; overflow:hidden; margin-top:16px; }
+  .preview-wrap img { width:100%; height:100%; object-fit:contain; display:none; }
+  .preview-placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#5a5f6b; font-size:0.85rem; }
+  .status { display:inline-block; padding:4px 12px; border-radius:999px; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; }
+  .status.running { background:#1f3a2e; color:#5fd98a; }
+  .status.done { background:#1f2f3a; color:#5fb0d9; }
+  .status.error { background:#3a1f1f; color:#d95f5f; }
+  .status.idle { background:#26262f; color:#9aa0ab; }
+  .bar-track { background:#20232d; border-radius:8px; height:14px; margin:20px 0; overflow:hidden; }
+  .bar-fill { background:linear-gradient(90deg,#5f8cd9,#5fd98a); height:100%; width:0%; transition:width .3s ease; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px; }
+  .stat-label { color:#9aa0ab; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; }
+  .stat-value { font-size:1.3rem; font-weight:600; margin-top:2px; }
+  .error-box { margin-top:16px; padding:12px; background:#2a1414; border:1px solid #4a1f1f; border-radius:8px; color:#ff8080; font-family:Consolas, monospace; font-size:0.85rem; white-space:pre-wrap; }
+  .file-list { list-style:none; margin:12px 0 0; padding:0; max-height:220px; overflow-y:auto; }
+  .file-list li { display:flex; justify-content:space-between; padding:8px 10px; border-bottom:1px solid #1f2129; font-size:0.85rem; }
+  .file-list li:last-child { border-bottom:none; }
+  .file-list .fname { color:#e6e6e6; }
+  .file-list .fsize { color:#9aa0ab; }
+  .file-list .empty { color:#6a707c; font-size:0.85rem; padding:8px 10px; }
+  .section-title { font-size:0.95rem; font-weight:600; margin:28px 0 4px; }
+  .section-sub { color:#9aa0ab; font-size:0.78rem; margin-bottom:8px; }
+</style>
+</head>
+<body>
+  <h1>Mudra — Extraction Runtime</h1>
+  <div class="sub">Live skeleton preview + stats, polled from <code>status.json</code> / <code>preview.jpg</code>. Run <code>run_extract.bat</code> to see it live.</div>
+
+  <div class="card">
+    <span id="status" class="status idle">idle</span>
+    <div class="bar-track"><div id="bar" class="bar-fill"></div></div>
+
+    <div class="preview-wrap">
+      <img id="preview" alt="Live skeleton preview">
+      <div id="previewPlaceholder" class="preview-placeholder">No active run — start run_extract.bat</div>
+    </div>
+
+    <div class="grid">
+      <div><div class="stat-label">Video</div><div id="video" class="stat-value">—</div></div>
+      <div><div class="stat-label">Progress</div><div id="percent" class="stat-value">—</div></div>
+      <div><div class="stat-label">Frame</div><div id="frame" class="stat-value">—</div></div>
+      <div><div class="stat-label">Processing speed</div><div id="fps" class="stat-value">—</div></div>
+      <div><div class="stat-label">Elapsed</div><div id="elapsed" class="stat-value">—</div></div>
+      <div><div class="stat-label">Output shape</div><div id="shape" class="stat-value">—</div></div>
+    </div>
+
+    <div id="errorBox" class="error-box" style="display:none;"></div>
+
+    <div class="section-title">Training videos (SampleVideos/)</div>
+    <div class="section-sub">Source clips that will be run through the extractor.</div>
+    <ul id="videoList" class="file-list"><li class="empty">Loading…</li></ul>
+
+    <div class="section-title">Extracted sequences (extracted/)</div>
+    <div class="section-sub">.npy feature sequences already produced, ready for training.</div>
+    <ul id="extractedList" class="file-list"><li class="empty">Loading…</li></ul>
+  </div>
+
+<script>
+async function poll() {
+  try {
+    const res = await fetch('status.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('no status yet');
+    const s = await res.json();
+
+    const statusEl = document.getElementById('status');
+    statusEl.textContent = s.status;
+    statusEl.className = 'status ' + s.status;
+
+    document.getElementById('video').textContent = s.video || '—';
+    document.getElementById('percent').textContent = s.percent != null ? s.percent + '%' : '—';
+    document.getElementById('frame').textContent = (s.frame != null && s.total_frames != null) ? `${s.frame} / ${s.total_frames}` : '—';
+    document.getElementById('fps').textContent = s.processing_fps != null ? s.processing_fps + ' fps' : '—';
+    document.getElementById('elapsed').textContent = s.elapsed_sec != null ? s.elapsed_sec + 's' : '—';
+    document.getElementById('shape').textContent = s.output_shape ? `(${s.output_shape.join(', ')})` : '—';
+    document.getElementById('bar').style.width = (s.percent || 0) + '%';
+
+    const errorBox = document.getElementById('errorBox');
+    if (s.error) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = s.error;
+    } else {
+      errorBox.style.display = 'none';
+    }
+  } catch (e) {
+    document.getElementById('status').textContent = 'waiting for run';
+    document.getElementById('status').className = 'status idle';
+  }
+}
+
+function renderList(elId, items, sizeKey, sizeSuffix) {
+  const el = document.getElementById(elId);
+  if (!items || items.length === 0) {
+    el.innerHTML = '<li class="empty">None found</li>';
+    return;
+  }
+  el.innerHTML = items.map(f =>
+    `<li><span class="fname">${f.name}</span><span class="fsize">${f[sizeKey]} ${sizeSuffix}</span></li>`
+  ).join('');
+}
+
+async function pollFiles() {
+  try {
+    const res = await fetch('files.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('no files.json yet');
+    const f = await res.json();
+    renderList('videoList', f.videos, 'size_mb', 'MB');
+    renderList('extractedList', f.extracted, 'size_kb', 'KB');
+  } catch (e) {
+    document.getElementById('videoList').innerHTML = '<li class="empty">files.json not generated yet — run run_dashboard.bat</li>';
+    document.getElementById('extractedList').innerHTML = '<li class="empty">files.json not generated yet — run run_dashboard.bat</li>';
+  }
+}
+
+function pollPreview() {
+  const img = document.getElementById('preview');
+  const placeholder = document.getElementById('previewPlaceholder');
+  const probe = new Image();
+  probe.onload = () => {
+    img.src = probe.src;
+    img.style.display = 'block';
+    placeholder.style.display = 'none';
+  };
+  probe.onerror = () => {
+    img.style.display = 'none';
+    placeholder.style.display = 'flex';
+  };
+  probe.src = 'preview.jpg?t=' + Date.now();
+}
+
+poll();
+pollFiles();
+pollPreview();
+setInterval(poll, 1000);
+setInterval(pollFiles, 3000);
+setInterval(pollPreview, 200);
+</script>
+</body>
+</html>
