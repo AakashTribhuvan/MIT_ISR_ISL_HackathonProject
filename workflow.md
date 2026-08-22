@@ -30,10 +30,10 @@ Reasoning through the hard parts up front, before we write more code:
 2. For live use, segment the continuous camera stream into candidate windows using a simple **idle/rest-pose detector** (hand landmarks absent, or motion magnitude below a threshold, for N frames = "not signing"). Feed only the windows between idle periods to the classifier.
 3. This means we need an explicit **"idle" / "no sign" class** in the training data — silence in audio terms. Without it the model has no way to know when *not* to output a word.
 
-**Feature vector: go back to the fuller, normalized version for training.** The current `extract.py` is intentionally the *bare-minimum* pipeline-smoke-test version — raw, un-normalized 225-dim coordinates, no velocity, no smoothing. That was correct for "prove the plumbing works," but it's the wrong feature set to actually train on:
+**Feature vector: use the fuller, normalized version for training.** The canonical `build_dataset.py` pipeline stores normalized position and velocity features:
 - Raw coordinates mean the model has to relearn "where the person is standing" for every sign — shoulder-relative normalization (already implemented once, in the original `landmark_extractor.py`) removes that noise.
 - Velocity features (frame-to-frame delta) matter a lot for *dynamic* signs — many ISL signs are defined by motion, not just a static handshape. Without velocity, the model is working from position alone, which is like trying to lip-read from a single photo.
-> ⚠ **Decision:** Phase 1 below re-introduces normalization + velocity into the real extractor (separate from `extract.py`'s bare-minimum mode, which stays for quick smoke tests). Confirm you want the 450-dim normalized+velocity feature set as the actual training input — I think it's clearly the right call given ISL is motion-heavy.
+This 450-dim normalized+velocity feature set is the actual training input because ISL is motion-heavy.
 
 **Variable length is a real problem.** Videos have different frame counts/FPS. Sequence models need either fixed-length input (resample every clip to N frames via interpolation) or padding + masking. Resampling to a fixed length (e.g. 45 frames) is simpler to implement and export to TF.js, so that's the default plan — flag if you'd rather do padding/masking.
 
@@ -45,7 +45,7 @@ Reasoning through the hard parts up front, before we write more code:
 
 *Goal: a dataset we can actually trust to train on, plus a manifest that tracks everything.*
 
-- [x] Build the "real" extractor (`build_dataset.py`, separate from bare-minimum `extract.py`) with shoulder-relative normalization + velocity features restored (450-dim/frame). **Done 2026-08-21** — see "Hardened extractor" log below for the full design and test results.
+- [x] Build the canonical extractor (`build_dataset.py`) with shoulder-relative normalization + velocity features (450-dim/frame). **Done 2026-08-21** — see "Hardened extractor" log below for the full design and test results.
 - [x] Add per-frame **detection-confidence / hand-presence flags** to saved metadata — `presence` (detected-or-interpolated) and `detected` (raw) arrays, per part (pose/left/right), saved alongside every clip.
 - [x] Store an explicit **timestamp array per frame** (ms) — real per-frame timestamps with a monotonic-safety fallback, not an implied frame index.
 - [ ] Add a **fixed-length resampling utility**: interpolate any sequence to N frames (e.g. 45) for model-ready batches, while keeping the original variable-length `.npz` as the source of truth (never destroy raw extracted data). *(Deliberately deferred — this is a training-prep step, not an extraction step; see design log below.)*
@@ -61,7 +61,7 @@ Reasoning through the hard parts up front, before we write more code:
 
 ### Hardened extractor design log (2026-08-21)
 
-Built `build_dataset.py` — folder-per-label batch extractor, separate from `extract.py` (which stays as the quick pipeline smoke-test). Design decisions:
+Built `build_dataset.py` — the canonical folder-per-label batch extractor with a five-video diagnostic preview mode. Design decisions:
 
 - **Two-pass processing.** Pass 1 decodes the whole clip and records raw MediaPipe detections per frame, including gaps (as NaN, not guessed values). Pass 2 sees the whole sequence at once and fills gaps intelligently: runs ≤5 frames with real data on both sides get linearly interpolated (a tracking flicker); longer runs, or runs touching the very start/end of a clip, are left at zero — a real absence, not a glitch, and faking a position there would teach the model something false. Only possible because this is offline batch processing, not the live camera pipeline — we get to see the future frames before deciding how to fill the past.
 - **Presence tracked separately from raw detection.** Every clip's `.npz` stores `detected` (true only for frames MediaPipe actually saw) alongside `presence` (detected OR short-gap-interpolated) — so downstream code can tell "this hand was really there" from "we smoothed over a 2-frame blip," instead of conflating them.
@@ -73,7 +73,7 @@ Built `build_dataset.py` — folder-per-label batch extractor, separate from `ex
 
 **Validated with a real end-to-end test**, not just unit tests: ran `build_dataset.py` against the existing sample video plus a synthetically degraded copy (25% resolution, Gaussian blur, added noise, via a throwaway script). Result — degraded clip: pose still detected 92.8% of frames, but hands only 21.4%/4.1% → correctly flagged `low_hand_detection`. Clean clip: pose 87.7%, left hand 51.7%, right hand 15.4% → not flagged, but worth a flag *for us* anyway: right-hand detection was low even on our "good" footage, likely because the sign in that clip is mostly one-handed or the hand often drops out of frame — a real, useful thing the quality system surfaced on its first real run, not a pipeline defect. `test_gap_fill.py` (6 pure-numpy unit tests, no video/MediaPipe needed) covers the interpolation/velocity edge cases directly and all pass — run it any time the gap-fill logic changes.
 
-**Feature schema**: `.npz` per clip = `features` (T, 450) [225 position + 225 velocity], `presence` (T, 3), `detected` (T, 3), `timestamps_ms` (T,). Position/velocity layout matches `extract.py`'s [pose(99), left(63), right(63)] ordering, doubled for velocity.
+**Feature schema**: `.npz` per clip = `features` (T, 450) [225 position + 225 velocity], `presence` (T, 3), `detected` (T, 3), `timestamps_ms` (T,). Position/velocity layout is [pose(99), left(63), right(63)], doubled for velocity.
 
 ---
 
@@ -92,19 +92,34 @@ Built `build_dataset.py` — folder-per-label batch extractor, separate from `ex
 
 *Goal: a small, fast classifier that runs client-side.*
 
-- [ ] **Architecture** (MVP): fixed-length landmark sequence (e.g. 45 frames × 450 features) → small **GRU/LSTM** or **1D-CNN / Temporal Convolutional Network** → softmax over `[labels..., idle]`. Any of these are lightweight enough to export to the browser and run in real time; exact choice matters less than getting the data pipeline right first.
-- [ ] Train/val/test split pulled from the manifest's signer-disjoint split (Phase 1).
-- [ ] **Export to TensorFlow.js (or ONNX + onnxruntime-web)** — this is the step that makes the model usable in a website per your requirement. Test the exported model actually loads and predicts in a browser before considering this phase done, not just that it trains well in Python.
-- [ ] Evaluate: accuracy + confusion matrix per class (which signs get confused with which — very informative for spotting bad data), and measure real inference latency in-browser (this is the "low latency is the main technical challenge" part of the problem statement).
+- [x] **Feasibility baseline** (`train_model.py`, 2026-08-21): RandomForest over windowed summary features (mean+std of the 450-dim position+velocity vector across a 45-frame sliding window, plus per-part detection-presence rate — 903 features/window). Deliberately the simplest thing that could work, to prove the data carries signal before investing in a sequence model. **Result: 89% held-out window accuracy vs. 1.6% random-chance baseline for 61 classes** (584 windows generated from the 61 single-take clips via sliding-window sampling, since we currently have one video per label). Caveat logged prominently in the script's own output: held-out windows come from the *same* source clips as training windows, so this is a "does the pipeline carry signal" sanity check, not a real generalization score — true validation needs multiple independent takes/signers per label (see Phase 1's signer-disjoint split item, still open) or a live human performance the model never saw (see Phase 4 below).
+- [ ] **Real architecture** (once more data lands): fixed-length landmark sequence → small **GRU/LSTM** or **1D-CNN/TCN** → softmax over `[labels..., idle]`. The RandomForest baseline proved the concept; a sequence model should do meaningfully better once there's enough independent data to justify it, and is also what actually exports cleanly to the browser (a pickled sklearn model does not).
+- [ ] Train/val/test split pulled from the manifest's signer-disjoint split (Phase 1) — blocked on more signers actually being added.
+- [ ] **Export to TensorFlow.js (or ONNX + onnxruntime-web)** — makes the model usable in a website per your requirement. `sign_classifier.pkl` (the current RandomForest) is a Python-only artifact and does NOT export to the browser — this is a real gap between today's proof-of-concept and the target architecture from Section 1, not yet closed.
+- [ ] Evaluate: accuracy + confusion matrix per class, and real inference latency in-browser once exported.
 
 ---
+
+### Dual-layer models + static alphabet layer (2026-08-21)
+
+Live webcam test on the 61-word dynamic model showed ~no recognition — expected, and explained at the time: all 61 training clips came from one external source (one performer/camera/lighting), so the earlier 89% "held-out" number was a same-source sanity check, not real generalization. Rather than wait on more diverse word data, added a second, independent model layer specifically for **static poses** (alphabet, any hardcoded held pose), which sidesteps the motion/generalization problem differently:
+
+- User supplied a public ISL alphabet image dataset (12,637 images, 26 letters, `TrainingData/<letter>/`, moved in from an `Alphabets/dataset_ISL/` folder).
+- **Performance fix required first**: processing 12,637 individual images through the existing per-clip-fresh-landmarker path (needed for video correctness) would have taken hours. Added a genuinely safe optimization: images can share ONE landmarker pair across the whole batch (unlike videos), since each image is an independent single-frame detection — just needs a monotonically increasing timestamp counter across the run. Cut this from an estimated 3-7 hours to a few minutes. `build_dataset.py` now splits video vs. image clips and routes them through `process_video_clips` (fresh landmarker/clip) vs. `process_image_clips` (shared landmarker) respectively.
+- Also added skip-if-already-processed (`load_processed_clip_ids`, `--force` to override) so re-running doesn't redo the 61 word clips every time new data is added — a real recurring need now that data arrives incrementally.
+- **Quality gate caught something real**: 10,085 of 12,637 images (80%) flagged, mostly `low_hand_detection`. Checked an actual flagged image directly rather than assuming a bug — it's a legitimate small/low-res, tightly-cropped photo; MediaPipe genuinely struggles on the smaller "augmented" variants in this dataset. Correct behavior, not a bug. All 26 letters still have usable clean data after filtering (23-173 images/letter).
+- **New `train_static_model.py`**: single-frame RandomForest (228 features: 225 position + 3 presence, no velocity — a held pose has none) trained only on the 2,552 clean image-sourced clips. **55.4% held-out accuracy vs. 3.8% chance baseline (26 classes)** — and unlike the dynamic model's caveat, this IS a real generalization check (independent images, not windowed sub-samples of one clip).
+- **`live_recognize.py` is now dual-layered**: runs the static single-frame classifier AND the dynamic windowed classifier simultaneously every frame, displaying both ("Letter: X (NN%)" / "Word: Y (NN%)"), independently thresholded. Static model is optional at load time (skips gracefully if not trained) so the script still works with just the dynamic layer.
+- Not yet live-tested by an actual person — that's the next step, same as before.
 
 ## 5. Phase 4 — Real-Time Recognition (Sign → Text → Speech)
 
 *Goal: point a phone/laptop camera at someone signing, see text appear, hear it spoken. This is the core deliverable.*
 
-- [ ] Browser-based live capture: MediaPipe Tasks Web (WASM) extracting landmarks directly from `getUserMedia`, same feature schema as training data (Phase 1) — critical that live features match training features exactly (normalization, velocity, frame rate) or the model will silently perform badly.
-- [ ] Sliding-window buffer + idle-state segmentation (Section 1) to detect gesture start/stop live.
+- [x] **Python proof-of-concept** (`live_recognize.py`, 2026-08-21): webcam → same per-frame landmark/normalization logic as `build_dataset.py` → rolling 45-frame window → RandomForest prediction plus low-latency idle/signing segmentation and template matching. Still needs real-person accuracy testing. Run `python live_recognize.py`, perform a few trained words/phrases, q/Esc to quit.
+- [x] Add hybrid MVP behavior: static alphabet prediction, dynamic model prediction, low-latency idle/signing segmentation, and nearest matching against normalized extracted templates. The template layer activates when `training_extracted/<label>/*.npz` exists.
+- [ ] Browser-based live capture: MediaPipe Tasks Web (WASM) extracting landmarks directly from `getUserMedia`, same feature schema as training data (Phase 1) — critical that live features match training features exactly (normalization, velocity, frame rate) or the model will silently perform badly. *(Today's proof-of-concept runs in Python/OpenCV instead — fastest way to validate the idea; browser port is separate work once the model itself is proven and re-architected as a sequence model, see Phase 3.)*
+- [x] Sliding-window buffer + idle-state segmentation (Section 1) to detect gesture start/stop live. *(Initial threshold-based MVP; thresholds need tuning with real webcam recordings.)*
 - [ ] Run the exported classifier (TF.js/ONNX.js) client-side per segmented window → recognized sign.
 - [ ] Assemble recognized signs into running text — needs simple debounce/confirmation logic so a held pose doesn't fire the same word 10 times.
 - [ ] **Text-to-Speech** — options and tradeoffs:

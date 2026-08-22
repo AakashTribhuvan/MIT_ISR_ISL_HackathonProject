@@ -3,18 +3,24 @@ TrainingData/
 Videos_Sentence_Level/
 SampleVideos/
 
-# Extraction outputs (regenerable by re-running build_dataset.py / extract.py)
+# Extraction outputs (regenerable by re-running build_dataset.py)
 extracted/
 training_extracted/
+test_extracted/
+sentence_test_extracted/
 
 # MediaPipe model files (downloaded binaries, see PROJECT_NOTES.md for source URLs)
 models/*.task
+
+# Trained model artifacts and source archives (large/generated or externally supplied)
+*.pkl
+*.rar
 
 # Generated dataset manifest (regenerable; also embeds local absolute paths)
 dataset_manifest.json
 dataset_manifest.csv
 
-# Dashboard runtime files (written live by extract.py / build_dataset.py, not source)
+# Dashboard runtime files (written live by build_dataset.py, not source)
 dashboard/status.json
 dashboard/preview.jpg
 dashboard/preview.tmp

@@ -10,6 +10,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-%PYTHON% build_dataset.py %*
+%PYTHON% live_recognize.py %*
 
 pause

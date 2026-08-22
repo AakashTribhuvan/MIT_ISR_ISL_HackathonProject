@@ -1,149 +1,94 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Mudra Extraction Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mudra Studio</title>
 <style>
-  body { background:#0f1117; color:#e6e6e6; font-family:'Segoe UI', system-ui, sans-serif; margin:0; padding:40px; }
-  h1 { font-size:1.4rem; margin-bottom:4px; }
-  .sub { color:#9aa0ab; margin-bottom:28px; font-size:0.9rem; }
-  .sub code { background:#1c1f28; padding:2px 6px; border-radius:4px; }
-  .card { background:#171a23; border:1px solid #262a36; border-radius:12px; padding:24px; max-width:720px; }
-  .preview-wrap { position:relative; width:100%; aspect-ratio:16/9; background:#0a0b0f; border:1px solid #262a36; border-radius:10px; overflow:hidden; margin-top:16px; }
-  .preview-wrap img { width:100%; height:100%; object-fit:contain; display:none; }
-  .preview-placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#5a5f6b; font-size:0.85rem; }
-  .status { display:inline-block; padding:4px 12px; border-radius:999px; font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; }
-  .status.running { background:#1f3a2e; color:#5fd98a; }
-  .status.done { background:#1f2f3a; color:#5fb0d9; }
-  .status.error { background:#3a1f1f; color:#d95f5f; }
-  .status.idle { background:#26262f; color:#9aa0ab; }
-  .bar-track { background:#20232d; border-radius:8px; height:14px; margin:20px 0; overflow:hidden; }
-  .bar-fill { background:linear-gradient(90deg,#5f8cd9,#5fd98a); height:100%; width:0%; transition:width .3s ease; }
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px; }
-  .stat-label { color:#9aa0ab; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; }
-  .stat-value { font-size:1.3rem; font-weight:600; margin-top:2px; }
-  .error-box { margin-top:16px; padding:12px; background:#2a1414; border:1px solid #4a1f1f; border-radius:8px; color:#ff8080; font-family:Consolas, monospace; font-size:0.85rem; white-space:pre-wrap; }
-  .file-list { list-style:none; margin:12px 0 0; padding:0; max-height:220px; overflow-y:auto; }
-  .file-list li { display:flex; justify-content:space-between; padding:8px 10px; border-bottom:1px solid #1f2129; font-size:0.85rem; }
-  .file-list li:last-child { border-bottom:none; }
-  .file-list .fname { color:#e6e6e6; }
-  .file-list .fsize { color:#9aa0ab; }
-  .file-list .empty { color:#6a707c; font-size:0.85rem; padding:8px 10px; }
-  .section-title { font-size:0.95rem; font-weight:600; margin:28px 0 4px; }
-  .section-sub { color:#9aa0ab; font-size:0.78rem; margin-bottom:8px; }
+:root { --ink:#18232b; --muted:#65747a; --paper:#f5f3ee; --panel:#fffdf8; --line:#d9ddd6; --teal:#087f78; --teal-dark:#075f5a; --yellow:#f2c14e; --red:#bd5548; --shadow:0 18px 48px #193b3b14; }
+* { box-sizing:border-box; }
+body { margin:0; min-height:100vh; color:var(--ink); background:var(--paper); font-family:Georgia, 'Times New Roman', serif; }
+button, input { font:inherit; }
+button { cursor:pointer; }
+.shell { max-width:1240px; margin:0 auto; padding:32px 28px 52px; }
+.topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; padding-bottom:26px; border-bottom:1px solid var(--line); }
+.brand { display:flex; align-items:center; gap:14px; }
+.mark { display:grid; place-items:center; width:44px; height:44px; color:#fff; background:var(--teal); border-radius:50% 50% 50% 10px; font:700 20px Georgia; transform:rotate(-8deg); }
+h1 { margin:0; font-size:clamp(2rem, 4vw, 3.5rem); line-height:.95; letter-spacing:-.03em; }
+.kicker { margin:0 0 7px; color:var(--teal); font:700 11px Arial, sans-serif; letter-spacing:.14em; text-transform:uppercase; }
+.top-note { max-width:350px; margin:0; color:var(--muted); font:14px/1.5 Arial, sans-serif; }
+.tabs { display:flex; gap:7px; margin:25px 0; overflow:auto; }
+.tab { flex:0 0 auto; border:1px solid transparent; border-radius:4px; padding:10px 15px; color:var(--muted); background:transparent; font:700 12px Arial, sans-serif; letter-spacing:.06em; text-transform:uppercase; }
+.tab:hover, .tab.active { color:var(--teal-dark); border-color:#b7d1ca; background:#e6f0eb; }
+.view { display:none; animation:rise .28s ease both; }
+.view.active { display:block; }
+@keyframes rise { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+.layout { display:grid; grid-template-columns:minmax(0, 1.35fr) minmax(280px, .65fr); gap:22px; }
+.panel { padding:24px; border:1px solid var(--line); background:var(--panel); box-shadow:var(--shadow); }
+.panel h2 { margin:0 0 6px; font-size:1.55rem; letter-spacing:-.02em; }
+.panel h3 { margin:0 0 10px; font-size:1rem; }
+.desc { margin:0 0 22px; color:var(--muted); font:14px/1.55 Arial, sans-serif; }
+.eyebrow { margin:0 0 8px; color:var(--teal); font:700 11px Arial, sans-serif; letter-spacing:.12em; text-transform:uppercase; }
+.hero { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; margin-bottom:22px; }
+.hero .number { color:var(--teal); font-size:4rem; line-height:.8; }
+.actions { display:flex; flex-wrap:wrap; gap:10px; }
+.action { border:0; border-radius:3px; padding:12px 15px; color:#fff; background:var(--teal); font:700 12px Arial, sans-serif; letter-spacing:.04em; text-transform:uppercase; }
+.action:hover { background:var(--teal-dark); }
+.action.secondary { color:var(--teal-dark); background:#dcece6; }
+.action.danger { color:#fff; background:var(--red); }
+.action:disabled { cursor:wait; opacity:.45; }
+.stat-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:1px; margin-top:20px; border:1px solid var(--line); background:var(--line); }
+.stat { min-height:84px; padding:14px; background:var(--panel); }
+.stat-label { color:var(--muted); font:10px Arial, sans-serif; letter-spacing:.1em; text-transform:uppercase; }
+.stat-value { margin-top:7px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:1.25rem; }
+.preview { position:relative; min-height:280px; margin-top:20px; overflow:hidden; border:1px solid var(--line); background:#1b2c2d; }
+.preview img { display:block; width:100%; height:100%; min-height:280px; object-fit:contain; }
+.preview.empty::after { content:'Preview appears while extraction is running'; position:absolute; inset:0; display:grid; place-items:center; color:#b7c5bf; font:13px Arial, sans-serif; }
+.status-line { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; font:12px Arial, sans-serif; }
+.badge { padding:5px 9px; border-radius:99px; color:#526368; background:#e5e8e3; font:700 10px Arial, sans-serif; letter-spacing:.08em; text-transform:uppercase; }
+.badge.running { color:#fff; background:var(--teal); }.badge.done { color:#27635b; background:#d8eee5; }.badge.error { color:#fff; background:var(--red); }
+.progress { height:9px; overflow:hidden; background:#e2e5df; }.progress > div { width:0; height:100%; background:var(--yellow); transition:width .3s; }
+.field { display:grid; gap:7px; margin:17px 0; }.field label { color:var(--muted); font:700 11px Arial, sans-serif; letter-spacing:.06em; text-transform:uppercase; }.field input { width:100%; border:1px solid var(--line); border-radius:2px; padding:11px; color:var(--ink); background:#fff; font:14px Consolas, monospace; }
+.log { min-height:120px; max-height:230px; overflow:auto; margin-top:18px; padding:14px; color:#c8d7d2; background:#1b2c2d; font:12px/1.55 Consolas, monospace; white-space:pre-wrap; }
+.file-list { max-height:295px; overflow:auto; margin:14px 0 0; padding:0; list-style:none; border-top:1px solid var(--line); }.file-list li { display:flex; justify-content:space-between; gap:12px; padding:10px 2px; border-bottom:1px solid var(--line); font:13px Arial, sans-serif; }.file-list li span:last-child { color:var(--muted); white-space:nowrap; }.empty { color:var(--muted); font:13px Arial, sans-serif; }
+.callout { padding:18px; border-left:4px solid var(--yellow); background:#fff4ce; font:14px/1.5 Arial, sans-serif; }.callout strong { display:block; margin-bottom:4px; font:700 12px Arial, sans-serif; text-transform:uppercase; }
+@media (max-width:760px) { .shell { padding:22px 15px 38px; }.topbar, .hero { display:block; }.top-note { margin-top:18px; }.layout { grid-template-columns:1fr; }.stat-grid { grid-template-columns:repeat(2, 1fr); }.panel { padding:18px; } }
 </style>
 </head>
 <body>
-  <h1>Mudra — Extraction Runtime</h1>
-  <div class="sub">Live skeleton preview + stats, polled from <code>status.json</code> / <code>preview.jpg</code>. Run <code>run_extract.bat</code> to see it live.</div>
+<main class="shell">
+  <header class="topbar"><div class="brand"><div class="mark">M</div><div><p class="kicker">Indian Sign Language studio</p><h1>Mudra</h1></div></div><p class="top-note">A calm control room for turning sign-language footage into data, models, and live recognition.</p></header>
+  <nav class="tabs" aria-label="Studio sections">
+    <button class="tab active" data-view="overview">Overview</button><button class="tab" data-view="extract">Extract</button><button class="tab" data-view="dataset">Dataset</button><button class="tab" data-view="train">Train</button><button class="tab" data-view="live">Live tools</button>
+  </nav>
 
-  <div class="card">
-    <span id="status" class="status idle">idle</span>
-    <div class="bar-track"><div id="bar" class="bar-fill"></div></div>
+  <section class="view active" id="overview"><div class="layout"><div class="panel"><div class="hero"><div><p class="eyebrow">Today’s workspace</p><h2>Make the next useful run.</h2><p class="desc">The pipeline is ready for the practical loop: capture or add footage, extract landmarks, train a baseline, then test it from the camera.</p></div><div class="number">01</div></div><div class="actions"><button class="action" data-run="dataset">Build dataset</button><button class="action secondary" data-run="train">Train models</button><button class="action secondary" data-run="recognize">Open live recognition</button></div><div class="stat-grid"><div class="stat"><div class="stat-label">Process</div><div class="stat-value" id="overviewStatus">Idle</div></div><div class="stat"><div class="stat-label">Last action</div><div class="stat-value" id="overviewAction">—</div></div><div class="stat"><div class="stat-label">Return code</div><div class="stat-value" id="overviewCode">—</div></div></div></div><aside class="panel"><p class="eyebrow">Working principle</p><h3>Keep raw evidence, derive everything else.</h3><p class="desc">Videos and images stay local. Extraction creates reproducible features; models are disposable outputs that can be rebuilt when the dataset improves.</p><div class="callout"><strong>Current milestone</strong>Landmarks, gap filling, manifests, baseline models, and Python live recognition are all in place.</div></aside></div></section>
 
-    <div class="preview-wrap">
-      <img id="preview" alt="Live skeleton preview">
-      <div id="previewPlaceholder" class="preview-placeholder">No active run — start run_extract.bat</div>
-    </div>
+  <section class="view" id="extract"><div class="layout"><div class="panel"><p class="eyebrow">Phase 01</p><h2>Extract landmarks</h2><p class="desc">MediaPipe detects 33 body landmarks and up to 2 hands on every frame. The preview draws those points while the extractor stores the numeric coordinates used for training.</p><div class="field"><label for="videoPath">Video path, optional</label><input id="videoPath" placeholder="SampleVideos\\SampleVideo.mp4"></div><div class="actions"><button class="action" data-run="extract">Run extractor</button><button class="action danger" data-run="stop">Stop process</button></div><div class="preview empty" id="preview"><img alt="MediaPipe pose and hand landmark preview"></div></div><aside class="panel"><div class="status-line"><h3>Runtime</h3><span class="badge" id="statusBadge">idle</span></div><div class="progress"><div id="progressBar"></div></div><div class="stat-grid"><div class="stat"><div class="stat-label">Video</div><div class="stat-value" id="video">—</div></div><div class="stat"><div class="stat-label">Progress</div><div class="stat-value" id="percent">—</div></div><div class="stat"><div class="stat-label">Frame</div><div class="stat-value" id="frame">—</div></div><div class="stat"><div class="stat-label">Speed</div><div class="stat-value" id="fps">—</div></div><div class="stat"><div class="stat-label">Elapsed</div><div class="stat-value" id="elapsed">—</div></div><div class="stat"><div class="stat-label">Shape</div><div class="stat-value" id="shape">—</div></div></div><div class="callout" style="margin-top:18px"><strong>Stored per frame</strong>Pose: 33 × 3 = 99 values. Left hand: 21 × 3 = 63. Right hand: 21 × 3 = 63. Total: 225 float values.</div><pre class="log" id="log">Waiting for a process.</pre></aside></div></section>
 
-    <div class="grid">
-      <div><div class="stat-label">Video</div><div id="video" class="stat-value">—</div></div>
-      <div><div class="stat-label">Progress</div><div id="percent" class="stat-value">—</div></div>
-      <div><div class="stat-label">Frame</div><div id="frame" class="stat-value">—</div></div>
-      <div><div class="stat-label">Processing speed</div><div id="fps" class="stat-value">—</div></div>
-      <div><div class="stat-label">Elapsed</div><div id="elapsed" class="stat-value">—</div></div>
-      <div><div class="stat-label">Output shape</div><div id="shape" class="stat-value">—</div></div>
-    </div>
+  <section class="view" id="dataset"><div class="layout"><div class="panel"><p class="eyebrow">Phase 01</p><h2>Prepare the dataset</h2><p class="desc">Scan the folder-per-label structure, process new clips and images, fill short detection gaps, and update the manifest.</p><div class="callout"><strong>Safe to repeat</strong>Already-processed clips are skipped unless the dataset script is run with its own force option.</div><div class="actions" style="margin-top:20px"><button class="action" data-run="dataset">Build new data</button><button class="action danger" data-run="stop">Stop process</button></div></div><aside class="panel"><h3>Local inventory</h3><p class="desc">The dashboard refreshes these lists from the generated inventory file.</p><h3>Source videos</h3><ul id="videoList" class="file-list"><li class="empty">Loading…</li></ul><h3 style="margin-top:24px">Extracted sequences</h3><ul id="extractedList" class="file-list"><li class="empty">Loading…</li></ul></aside></div></section>
 
-    <div id="errorBox" class="error-box" style="display:none;"></div>
+  <section class="view" id="train"><div class="layout"><div class="panel"><p class="eyebrow">Phase 03</p><h2>Train the baselines</h2><p class="desc">The dynamic word model and static alphabet model are separate on purpose: motion and held poses have different signals.</p><div class="actions"><button class="action" data-run="train">Prepare dataset + train</button><button class="action secondary" data-run="train-static">Retrain static only</button><button class="action danger" data-run="stop">Stop process</button></div><pre class="log" id="trainLog">Choose a training run to see its output here.</pre></div><aside class="panel"><p class="eyebrow">Interpretation</p><h3>Baseline, not final architecture.</h3><p class="desc">The Random Forest models prove that the extracted data carries useful signal. Browser-ready sequence models and signer-disjoint evaluation are still the next quality bar.</p><div class="stat-grid"><div class="stat"><div class="stat-label">Dynamic output</div><div class="stat-value">sign_classifier.pkl</div></div><div class="stat"><div class="stat-label">Static output</div><div class="stat-value">static_pose_classifier.pkl</div></div></div></aside></div></section>
 
-    <div class="section-title">Training videos (SampleVideos/)</div>
-    <div class="section-sub">Source clips that will be run through the extractor.</div>
-    <ul id="videoList" class="file-list"><li class="empty">Loading…</li></ul>
-
-    <div class="section-title">Extracted sequences (extracted/)</div>
-    <div class="section-sub">.npy feature sequences already produced, ready for training.</div>
-    <ul id="extractedList" class="file-list"><li class="empty">Loading…</li></ul>
-  </div>
-
+  <section class="view" id="live"><div class="layout"><div class="panel"><p class="eyebrow">Phase 04</p><h2>Use the camera</h2><p class="desc">These tools open their native OpenCV windows. Keep this dashboard open to see the process state, then use q or Escape in the camera window to finish.</p><div class="actions"><button class="action" data-run="recognize">Start recognition</button><button class="action secondary" data-run="capture">Capture static poses</button><button class="action danger" data-run="stop">Stop process</button></div><pre class="log" id="liveLog">No camera process started.</pre></div><aside class="panel"><p class="eyebrow">Two layers</p><h3>Letter plus word recognition.</h3><p class="desc">The live proof of concept runs the static alphabet classifier and the dynamic word classifier together, each with its own confidence threshold.</p><div class="callout"><strong>Next quality step</strong>Test with a person and signer data the models have never seen. Same-source window accuracy is only a pipeline sanity check.</div></aside></div></section>
+</main>
 <script>
-async function poll() {
-  try {
-    const res = await fetch('status.json?t=' + Date.now(), { cache: 'no-store' });
-    if (!res.ok) throw new Error('no status yet');
-    const s = await res.json();
-
-    const statusEl = document.getElementById('status');
-    statusEl.textContent = s.status;
-    statusEl.className = 'status ' + s.status;
-
-    document.getElementById('video').textContent = s.video || '—';
-    document.getElementById('percent').textContent = s.percent != null ? s.percent + '%' : '—';
-    document.getElementById('frame').textContent = (s.frame != null && s.total_frames != null) ? `${s.frame} / ${s.total_frames}` : '—';
-    document.getElementById('fps').textContent = s.processing_fps != null ? s.processing_fps + ' fps' : '—';
-    document.getElementById('elapsed').textContent = s.elapsed_sec != null ? s.elapsed_sec + 's' : '—';
-    document.getElementById('shape').textContent = s.output_shape ? `(${s.output_shape.join(', ')})` : '—';
-    document.getElementById('bar').style.width = (s.percent || 0) + '%';
-
-    const errorBox = document.getElementById('errorBox');
-    if (s.error) {
-      errorBox.style.display = 'block';
-      errorBox.textContent = s.error;
-    } else {
-      errorBox.style.display = 'none';
-    }
-  } catch (e) {
-    document.getElementById('status').textContent = 'waiting for run';
-    document.getElementById('status').className = 'status idle';
-  }
+const $ = (id) => document.getElementById(id);
+const tabs = document.querySelectorAll('.tab');
+tabs.forEach(tab => tab.addEventListener('click', () => { tabs.forEach(item => item.classList.remove('active')); document.querySelectorAll('.view').forEach(view => view.classList.remove('active')); tab.classList.add('active'); $(tab.dataset.view).classList.add('active'); }));
+async function run(action) {
+  const args = action === 'extract' && $('videoPath').value.trim() ? [$('videoPath').value.trim()] : [];
+  const response = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, args}) });
+  const data = await response.json();
+  if (!data.ok) throw new Error(data.result || data.error || 'Could not start action');
 }
-
-function renderList(elId, items, sizeKey, sizeSuffix) {
-  const el = document.getElementById(elId);
-  if (!items || items.length === 0) {
-    el.innerHTML = '<li class="empty">None found</li>';
-    return;
-  }
-  el.innerHTML = items.map(f =>
-    `<li><span class="fname">${f.name}</span><span class="fsize">${f[sizeKey]} ${sizeSuffix}</span></li>`
-  ).join('');
-}
-
-async function pollFiles() {
-  try {
-    const res = await fetch('files.json?t=' + Date.now(), { cache: 'no-store' });
-    if (!res.ok) throw new Error('no files.json yet');
-    const f = await res.json();
-    renderList('videoList', f.videos, 'size_mb', 'MB');
-    renderList('extractedList', f.extracted, 'size_kb', 'KB');
-  } catch (e) {
-    document.getElementById('videoList').innerHTML = '<li class="empty">files.json not generated yet — run run_dashboard.bat</li>';
-    document.getElementById('extractedList').innerHTML = '<li class="empty">files.json not generated yet — run run_dashboard.bat</li>';
-  }
-}
-
-function pollPreview() {
-  const img = document.getElementById('preview');
-  const placeholder = document.getElementById('previewPlaceholder');
-  const probe = new Image();
-  probe.onload = () => {
-    img.src = probe.src;
-    img.style.display = 'block';
-    placeholder.style.display = 'none';
-  };
-  probe.onerror = () => {
-    img.style.display = 'none';
-    placeholder.style.display = 'flex';
-  };
-  probe.src = 'preview.jpg?t=' + Date.now();
-}
-
-poll();
-pollFiles();
-pollPreview();
-setInterval(poll, 1000);
-setInterval(pollFiles, 3000);
-setInterval(pollPreview, 200);
+document.querySelectorAll('[data-run]').forEach(button => button.addEventListener('click', async () => { button.disabled = true; try { await run(button.dataset.run); } catch (error) { alert(error.message); } finally { setTimeout(() => { button.disabled = false; }, 900); } }));
+function setText(id, value) { if ($(id)) $(id).textContent = value || '—'; }
+async function pollStatus() { try { const response = await fetch('/api/status?t=' + Date.now()); const state = await response.json(); const badge = $('statusBadge'); badge.textContent = state.status; badge.className = 'badge ' + state.status; setText('overviewStatus', state.status); setText('overviewAction', state.action); setText('overviewCode', state.returncode); setText('video', state.video); setText('percent', state.percent != null ? state.percent + '%' : null); setText('frame', state.frame != null && state.total_frames != null ? `${state.frame} / ${state.total_frames}` : null); setText('fps', state.processing_fps != null ? state.processing_fps + ' fps' : null); setText('elapsed', state.elapsed_sec != null ? state.elapsed_sec + 's' : null); setText('shape', state.output_shape ? `(${state.output_shape.join(', ')})` : null); $('progressBar').style.width = (state.percent || 0) + '%'; const output = (state.last_output || []).join('\n') || 'Waiting for a process.'; $('log').textContent = output; $('trainLog').textContent = output; $('liveLog').textContent = output; } catch (error) { setText('overviewStatus', 'Offline'); } }
+function renderList(id, items, key, suffix) { const list = $(id); if (!items || !items.length) { list.innerHTML = '<li class="empty">None found</li>'; return; } list.innerHTML = items.map(item => `<li><span>${item.name}</span><span>${item[key]} ${suffix}</span></li>`).join(''); }
+async function pollFiles() { try { const response = await fetch('/api/files?t=' + Date.now()); const files = await response.json(); renderList('videoList', files.videos, 'size_mb', 'MB'); renderList('extractedList', files.extracted, 'size_kb', 'KB'); } catch (error) {} }
+function pollPreview() { const image = $('preview').querySelector('img'); const probe = new Image(); probe.onload = () => { image.src = probe.src; $('preview').classList.remove('empty'); }; probe.onerror = () => $('preview').classList.add('empty'); probe.src = '/preview.jpg?t=' + Date.now(); }
+pollStatus(); pollFiles(); pollPreview(); setInterval(pollStatus, 1000); setInterval(pollFiles, 3000); setInterval(pollPreview, 500);
 </script>
 </body>
 </html>

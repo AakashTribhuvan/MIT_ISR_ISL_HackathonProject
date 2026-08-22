@@ -1,4 +1,4 @@
-# Mudra — Project Notes
+# MudraAI — Project Notes
 
 Source reviewed: `D:\MudraAI-main\README.md`, `D:\MudraAI-main\landmark_extractor.py`
 
@@ -21,13 +21,19 @@ Data pipeline for Indian Sign Language (ISL) dynamic gesture recognition. Extrac
 ## Current file inventory (as of 2026-08-21)
 
 Present in `D:\MudraAI-main`:
-- `landmark_extractor.py` — batch video extraction, implemented
-- `README.md`
 
 Referenced by README but **not yet present**:
 - `v1/hand_tracker.py` — real-time webcam capture + recording
 - `v1/models/hand_landmarker.task`, `v1/models/pose_landmarker_lite.task` — MediaPipe model files (required for extractor to run at all)
 - `training_data/` — video inputs / extracted output folder
+
+## Quick extraction test
+
+Set `TEST_MODE = True` near the top of `build_dataset.py` and run `python build_dataset.py`. It processes up to five videos per action under `Videos_Sentence_Level/`, writes labeled templates to `sentence_test_extracted/`, and does not update the real dataset manifest. `SHOW_TEST_PREVIEW = False` keeps this batch fast; enable it only for visual inspection. Set `TEST_MODE = False` for the full `TrainingData/` dataset.
+
+## Hybrid live recognition
+
+`live_recognize.py` now combines the static alphabet classifier, dynamic word classifier, idle/signing segmentation, and nearest matching against normalized templates under `training_extracted/<label>/*.npz`. Run the full dataset builder first to populate that template library.
 
 ## Known issues / gaps
 
@@ -37,7 +43,7 @@ Referenced by README but **not yet present**:
 
 ## Tech stack
 
-- **Language:** Python 3
+-  **Language:** Python 3
 - **Computer vision / video I/O:** OpenCV (`cv2`) — reads `.mp4` frames via `VideoCapture`, color-space conversion (BGR→RGB), draws skeleton overlays (`cv2.line`, `cv2.circle`, `cv2.putText`), live preview window (`cv2.imshow`)
 - **Landmark detection:** MediaPipe Tasks API (`mediapipe`, `mediapipe.tasks.python`, `mediapipe.tasks.python.vision`)
   - `vision.HandLandmarker` — 21 landmarks/hand, up to 2 hands, `VIDEO` running mode
@@ -111,62 +117,15 @@ pip install opencv-python numpy mediapipe
 - Conclusion: the full stack (Python 3.13.9 + numpy 2.3.5 + opencv-python 5.0.0.93 + mediapipe 1.0.1) resolves coherently — no version conflicts. Not yet actually `pip install`-ed; run `pip install -r requirements.txt` in `D:\ISL` when ready.
 - Still missing (blocks actually running extraction): `models/hand_landmarker.task` and `models/pose_landmarker_lite.task` — need to be downloaded into `D:\ISL\models\`.
 
-## Bare-minimum extractor (`D:\ISL\extract.py`)
+## Canonical extractor (`D:\ISL\build_dataset.py`)
 
-Stripped-down version of the original `landmark_extractor.py`, single video in → `.npy` out:
+Folder-based dataset extractor with an optional five-video preview mode:
 
-- No smoothing, no shoulder-based normalization, no velocity features, no CLI flags beyond input/output path + display toggles (see below).
+- No smoothing, no shoulder-based normalization, no velocity features, no display/drawing, no CLI flags beyond input/output path.
 - Pose (33x3=99) + hand 1 (21x3=63) + hand 2 (21x3=63) = **225 features/frame**, raw MediaPipe coordinates.
 - Hand order is just detection order (index 0 = "left" slot, index 1 = "right" slot) — not handedness-checked, unlike the original.
-- Usage: `python extract.py [video.mp4] [output.npy] [--native-window] [--no-preview]` — all args optional.
-- Defaults: video = `D:\ISL\SampleVideos\SampleVideo.mp4`, output = `D:\ISL\extracted\<video_stem>.npy` (folder auto-created).
-- Requires `D:\ISL\models\hand_landmarker.task` and `D:\ISL\models\pose_landmarker_lite.task` to exist first.
-
-## Sample data
-
-- `D:\ISL\SampleVideos\SampleVideo.mp4` — added by user, used as the default input for `extract.py`.
-
-## Run script (`D:\ISL\run_extract.bat`)
-
-Double-clickable entry point: `pip install -r requirements.txt` (quiet) then runs `extract.py`, forwarding any args (`run_extract.bat <video> <output>`). Pauses at the end so the console window stays open to read output/errors.
-
-## Live preview + dashboard (2026-08-21)
-
-- **Live skeleton overlay** (extract.py): draws the arm skeleton and both hand skeletons on the frame, with frame counter and live processing-fps text, every frame while running. *(Superseded below — as of the same-day polish pass, this now streams to the web dashboard by default instead of a native window; see "Web-based live preview" section.)*
-- **Runtime dashboard** (`D:\ISL\dashboard\`): a single static `index.html` (vanilla HTML/CSS/JS, no build step, no new dependencies) that polls a `status.json` file once per second and shows status, video name, percent, frame/total, processing fps, elapsed time, output shape, and any error. Chose plain static JS + Python's built-in `http.server` over React/npm specifically because this is a throwaway local viewer — no build tooling needed.
-  - `extract.py` writes `dashboard/status.json` every 10 frames and on completion/error.
-  - `run_dashboard.bat` starts `python -m http.server 8000` in `dashboard/` and opens `http://localhost:8000` in the browser.
-  - Usage: run `run_dashboard.bat` first (leave it running), then run `run_extract.bat` in another window — the dashboard updates live.
-  - Verified: server serves `index.html` and `status.json` with HTTP 200; a full extraction run produced `status.json` ending in `{"status": "done", "output_shape": [1718, 225], ...}`.
-
-## Branding + preview + training-files showcase (2026-08-21)
-
-- Project renamed from "MudraAI" to "**Mudra**" in all our own files (window title, dashboard title/heading, notes title). Left `D:\MudraAI-main` references alone since that's the actual name of the reference source folder on disk.
-- **OpenCV preview scaled down**: display frame is now capped at 720px on its longest side (`DISPLAY_MAX_DIM` in `extract.py`) before drawing/showing — only affects the preview window, not the underlying detection or the saved feature values (those still use full-resolution landmark coordinates).
-- **Training-files showcase** added to the dashboard: new `list_training_files.py` scans `SampleVideos/*.mp4` (source clips) and `extracted/*.npy` (already-produced sequences) and writes `dashboard/files.json`. `run_dashboard.bat` generates it on startup; `extract.py` regenerates it after every run so the list stays current. Dashboard shows both lists with file sizes, polled every 3s.
-- All verified: compiled clean, `list_training_files.py` produced correct `files.json`, dashboard served it over HTTP 200, "Mudra" branding confirmed in the served HTML.
-
-## End goal / vision
-
-- Data extracted here (landmark sequences) is meant to train a model that takes a **live webcam feed**, recognizes ISL signs in real time, and displays the translated **English text on screen**.
-- Not built yet — this project (`extract.py`, dashboard) only covers the data-extraction stage. Training and live inference are future work, to be scoped in upcoming task additions to this file.
-- Implication for later: whatever real-time inference app gets built should reuse the same landmark-extraction approach (MediaPipe pose+hands, 225-value frame vector) so training data and live input match.
-
-## Web-based live preview replaces native OpenCV window (2026-08-21)
-
-- `extract.py` no longer opens a native `cv2.imshow` window by default. Instead it writes each annotated frame (skeleton overlay + frame/fps text) to `dashboard/preview.jpg`, and the dashboard `<img>` polls it every 200ms — effectively a live feed inside the browser instead of a separate window.
-- `--native-window` brings back the local OpenCV window (useful for debugging without the dashboard open); `--no-preview` disables the web preview write entirely (max speed, e.g. for unattended batch runs).
-- Preview frames are throttled to every 2nd processed frame and JPEG-quality 80 to limit disk I/O.
-- **Bug found + fixed during testing:** the first version used `Path.replace()` for an atomic preview-file swap, which is correct on POSIX but on Windows can throw `PermissionError: Access is denied` if the dashboard's `http.server` has the file open for reading at that exact instant — this crashed the entire extraction mid-run (confirmed via a full background test that failed at frame ~410/1718). Fixed by wrapping the write+replace in `try/except OSError: pass` — a dropped preview frame is harmless, but a crashed extraction run is not. Re-tested a full run afterward (1718/1718 frames, `status: done`) with the dashboard open and polling concurrently — no crash.
-- Verified live: fetched `preview.jpg` twice 3s apart mid-run and confirmed the byte content actually changed (proving it's a live feed, not a stale file).
-
-## Status: working end-to-end (2026-08-21)
-
-- `requirements.txt` was never the problem — `pip install -r requirements.txt` installs cleanly, no version conflicts (mediapipe 1.0.1 / opencv-python 5.0.0.93 / numpy 2.3.5 on Python 3.13.9).
-- Real blocker was the missing model files. Downloaded from Google's official MediaPipe model repo into `D:\ISL\models\`:
-  - `hand_landmarker.task` (~7.8 MB)
-  - `pose_landmarker_lite.task` (~5.8 MB)
-- Ran `python extract.py` against the default sample video → produced `D:\ISL\extracted\SampleVideo.npy`, shape `(1718, 225)`. Pipeline is now fully functional locally.
+- Test mode: set `TEST_MODE = True` and run `run_extract.bat` to skip the first video and process the next five from `Videos_Sentence_Level/` with the diagnostic preview windows.
+- Full mode: set `TEST_MODE = False` and run `run_extract.bat` to process `TrainingData/`.
 
 ## Tasks
 

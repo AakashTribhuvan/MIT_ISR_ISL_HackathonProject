@@ -1,9 +1,8 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set PYTHON="C:\Users\Shamita\anaconda3\python.exe"
 
-python list_training_files.py
-
-cd /d "%~dp0dashboard"
+%PYTHON% list_training_files.py
 start "" http://localhost:8000
-python -m http.server 8000
+%PYTHON% dashboard_server.py
